@@ -166,3 +166,87 @@ def test_api_view_audit_report_endpoint():
     # Rota inválida (não existente)
     response_err = client.get("/api/audits/non-existent-session")
     assert response_err.status_code == 404
+
+
+def test_audit_log_missing_index_and_exception_handling():
+    """
+    Testa caminhos alternativos de exceção no módulo audit_log.py para garantir 100% de cobertura.
+    """
+    audits_dir = os.path.join(APP_DATA_DIR, "audits")
+    index_file = os.path.join(APP_DATA_DIR, "audit_index.json")
+    
+    # 1. Garante que index_file não existe e chama get_audit_index
+    if os.path.exists(index_file):
+        os.remove(index_file)
+    assert audit_log.get_audit_index() == []
+    
+    # 2. Escreve JSON corrompido no arquivo de índice
+    os.makedirs(APP_DATA_DIR, exist_ok=True)
+    with open(index_file, "w", encoding="utf-8") as f:
+        f.write("{invalid-json:")
+        
+    # get_audit_index() deve lidar com a exceção e retornar []
+    assert audit_log.get_audit_index() == []
+    
+    # save_audit_log() deve tratar o arquivo corrompido, resetar para [] e salvar com sucesso
+    filepath = audit_log.save_audit_log(
+        session_id="test-corrupted-session",
+        model="gemini-3.5-flash",
+        total_turns=1,
+        usage={"prompt_token_count": 10, "total_token_count": 20}
+    )
+    assert os.path.exists(filepath)
+    assert len(audit_log.get_audit_index()) == 1
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_token_extraction_exception(monkeypatch):
+    """
+    Testa o bloco do except na extração de tokens em orchestrator.py para alcançar 100% de cobertura.
+    """
+    import sys
+    
+    # Obtém as classes de Mock corretas diretamente do módulo injetado
+    AgentClass = sys.modules["google.antigravity"].Agent
+    ConversationClass = AgentClass().conversation.__class__
+    
+    # 1. Patch no __init__ de ConversationClass para não definir total_usage no __dict__ do objeto
+    monkeypatch.setattr(ConversationClass, "__init__", lambda self: None)
+    
+    # 2. Patch do atributo total_usage na classe ConversationClass como uma propriedade que levanta exceção
+    @property
+    def broken_total_usage(self):
+        raise AttributeError("Simulated conversation extraction failure")
+        
+    monkeypatch.setattr(ConversationClass, "total_usage", broken_total_usage, raising=False)
+    
+    session_id = "test-error-session-tokens"
+    result = await run_agent_orchestrator(
+        session_id=session_id,
+        prompt="Olá"
+    )
+    
+    # O orquestrador deve rodar com sucesso mesmo com a falha de extração, usando valores padrão de tokens zerados
+    assert result["session_id"] == session_id
+    assert result["usage"]["prompt_token_count"] == 0
+    assert result["usage"]["total_token_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_api_chat_exception_handling(monkeypatch):
+    """
+    Testa o bloco try/except do endpoint /api/chat no main.py.
+    """
+    # Mock do run_agent_orchestrator para lançar um erro genérico
+    async def mock_failed_orchestrator(*args, **kwargs):
+        raise RuntimeError("Conexão simulada falhou!")
+        
+    monkeypatch.setattr("app.main.run_agent_orchestrator", mock_failed_orchestrator)
+    
+    response = client.post(
+        "/api/chat",
+        json={"prompt": "Disparar erro", "session_id": "test-err-session-api"}
+    )
+    assert response.status_code == 500
+    assert "Erro interno" in response.json()["detail"]
+
