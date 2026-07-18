@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  orchestrator:
+    build: .
+    container_name: agy_orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - AGENT_MODEL=gemini-3.5-flash
+      - APP_DATA_DIR=/app/app_data
+      - PYTHONPATH=/app
+    volumes:
+      - ./app_data:/app/app_data
+    restart: always
+
+  # Container opcional para rodar testes automatizados isolados no CI/CD ou local
+  tests:
+    build: .
+    container_name: agy_tests
+    environment:
+      - GEMINI_API_KEY=mock-api-key
+      - APP_DATA_DIR=/app/app_data
+      - PYTHONPATH=/app
+    volumes:
+      - ./app_data:/app/app_data
+    command: ["pytest", "--cov=app", "tests/"]
