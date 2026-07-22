@@ -1,28 +1,70 @@
 version: '3.8'
 
 services:
-  orchestrator:
-    build: .
-    container_name: agy_orchestrator
+  antigravity-postgres:
+    image: postgres:15-alpine
+    container_name: antigravity_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: antigravitypassword
+      POSTGRES_DB: antigravity_db
     ports:
-      - "8000:8000"
-    environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - AGENT_MODEL=gemini-3.5-flash
-      - APP_DATA_DIR=/app/app_data
-      - PYTHONPATH=/app
+      - "5434:5432"
     volumes:
-      - ./app_data:/app/app_data
-    restart: always
+      - antigravity_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - antigravity_network
 
-  # Container opcional para rodar testes automatizados isolados no CI/CD ou local
-  tests:
-    build: .
-    container_name: agy_tests
+  antigravity-langfuse:
+    image: langfuse/langfuse:2
+    container_name: antigravity_langfuse
+    depends_on:
+      antigravity-postgres:
+        condition: service_healthy
     environment:
-      - GEMINI_API_KEY=mock-api-key
-      - APP_DATA_DIR=/app/app_data
-      - PYTHONPATH=/app
-    volumes:
-      - ./app_data:/app/app_data
-    command: ["pytest", "--cov=app", "tests/"]
+      - DATABASE_URL=postgresql://postgres:antigravitypassword@antigravity-postgres:5432/antigravity_db
+      - NEXTAUTH_SECRET=antigravitysecret
+      - NEXTAUTH_URL=http://localhost:3003
+      - SALT=antigravitysalt
+      - ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+      - TELEMETRY_ENABLED=false
+      - LANGFUSE_INIT_USER_EMAIL=admin@antigravity.com
+      - LANGFUSE_INIT_USER_PASSWORD=adminpassword123
+      - LANGFUSE_INIT_ORG_ID=antigravity-org
+      - LANGFUSE_INIT_ORG_NAME=Antigravity Org
+      - LANGFUSE_INIT_PROJECT_ID=antigravity-project
+      - LANGFUSE_INIT_PROJECT_NAME=Antigravity Project
+      - LANGFUSE_INIT_PROJECT_PUBLIC_KEY=pk-lf-antigravity
+      - LANGFUSE_INIT_PROJECT_SECRET_KEY=sk-lf-antigravity
+      - LANGFUSE_DISABLE_SIGNUP=true
+    ports:
+      - "3003:3000"
+    networks:
+      - antigravity_network
+
+  antigravity-app:
+    build: .
+    container_name: antigravity_app
+    ports:
+      - "8002:8000"
+    environment:
+      - ENV=production
+      - LANGFUSE_PUBLIC_KEY=pk-lf-antigravity
+      - LANGFUSE_SECRET_KEY=sk-lf-antigravity
+      - LANGFUSE_HOST=http://antigravity-langfuse:3000
+    depends_on:
+      - antigravity-langfuse
+    networks:
+      - antigravity_network
+
+networks:
+  antigravity_network:
+    driver: bridge
+
+volumes:
+  antigravity_postgres_data:
