@@ -250,3 +250,55 @@ async def test_api_chat_exception_handling(monkeypatch):
     assert response.status_code == 500
     assert "Erro interno" in response.json()["detail"]
 
+
+def test_observability_coverage(monkeypatch):
+    """
+    Testa todas as rotas e exceções do módulo OrchestratorObservability para garantir 100% de cobertura.
+    """
+    from app.observability import OrchestratorObservability, _create_trace
+    import app.observability as obs_mod
+
+    class MockSpan:
+        def end(self):
+            pass
+
+    class MockTrace:
+        def span(self, name, input=None):
+            return MockSpan()
+        def update(self, output=None, metadata=None):
+            pass
+        def score(self, name, value):
+            pass
+
+    class MockLangfuse:
+        def trace(self, **kwargs):
+            return MockTrace()
+        def start_observation(self, **kwargs):
+            return MockTrace()
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(obs_mod, "langfuse_client", MockLangfuse())
+
+    trace = OrchestratorObservability.start_agent_trace("session-obs-test", "Prompt de teste")
+    assert trace is not None
+
+    span = OrchestratorObservability.record_hook_span(trace, "test_hook", {"event": "start"})
+    assert span is not None
+
+    OrchestratorObservability.record_usage_and_cost(
+        trace,
+        {"prompt_token_count": 10, "candidates_token_count": 10, "thoughts_token_count": 0, "total_token_count": 20},
+        0.00001
+    )
+
+    OrchestratorObservability.flush()
+
+    # Testes com langfuse_client zerado / Nulo
+    monkeypatch.setattr(obs_mod, "langfuse_client", None)
+    assert _create_trace("test") is None
+    assert OrchestratorObservability.record_hook_span(None, "hook", {}) is None
+    OrchestratorObservability.record_usage_and_cost(None, {}, 0.0)
+
+
+

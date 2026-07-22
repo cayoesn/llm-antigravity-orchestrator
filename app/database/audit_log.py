@@ -12,6 +12,12 @@ COST_CANDIDATE = 0.00000030   # $0.30 / milhão
 COST_THINKING = 0.00000030    # $0.30 / milhão
 
 
+def calculate_gemini_cost(model: str, prompt_tokens: int, candidates_tokens: int, thinking_tokens: int) -> float:
+    """Calcula o custo estimado em USD com base na quantidade de tokens."""
+    return (prompt_tokens * COST_PROMPT) + (candidates_tokens * COST_CANDIDATE) + (thinking_tokens * COST_THINKING)
+
+
+
 def save_audit_log(session_id: str, model: str, total_turns: int, usage: dict) -> str:
     """
     Grava um arquivo Markdown de auditoria de custo detalhado e atualiza o índice global JSON.
