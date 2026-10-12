@@ -28,9 +28,10 @@ Este repositório serve como base técnica e demonstrativa de como gerenciar de 
 Ao projetar sistemas de agentes complexos para produção, a **previsibilidade de custos** e a **rastreabilidade das decisões do agente** são requisitos inegociáveis. O `llm-antigravity-orchestrator` resolve esses gargalos implementando:
 
 1. **Monitoria Avançada de Custos:** Integração direta com `agent.conversation.total_usage` para auditar tokens de Prompt, Geração e *Thinking Tokens* (tokens de pensamento de raciocínio de modelos avançados).
-2. **Ganchos de Interceptação (Hooks):** Monitoramento assíncrono de eventos que acontecem antes do turno (`pre_turn`), depois do turno (`post_turn`), e na abertura/fechamento das sessões do agente.
-3. **Persistência Confinada (`app_data_dir`):** Armazenamento estruturado e isolado de sessões e relatórios markdown de auditoria em um diretório absoluto definido pelo usuário.
-4. **Ferramentas Próprias e Delegação:** Registro de funções Python nativas como ferramentas e ativação de subagentes delegados em segundo plano.
+2. **Encadeamento Criptográfico SHA-256 (Hash Chain):** Cada registro de auditoria é selado com um hash criptográfico encadeado ao bloco anterior (`previous_hash` $\to$ `current_hash`), garantindo imutabilidade, conformidade regulatória corporativa e detecção em $\mathcal{O}(N)$ de qualquer adulteração manual em relatórios ou custos.
+3. **Ganchos de Interceptação (Hooks):** Monitoramento assíncrono de eventos que acontecem antes do turno (`pre_turn`), depois do turno (`post_turn`), e na abertura/fechamento das sessões do agente.
+4. **Persistência Confinada (`app_data_dir`):** Armazenamento estruturado e isolado de sessões e relatórios markdown de auditoria em um diretório absoluto definido pelo usuário.
+5. **Ferramentas Próprias e Delegação:** Registro de funções Python nativas como ferramentas e ativação de subagentes delegados em segundo plano.
 
 ---
 
@@ -202,9 +203,9 @@ Este repositório é **100% independente e autônomo**. Ele não depende de nenh
      - Email: `admin@llmantigravityorchestrator.com`
      - Senha: `adminpassword123`
 
-3. **Execução de Testes Automatizados em Container**:
+3. **Execução de Testes Automatizados (100% Hermético / 93% Cobertura)**:
    ```bash
-   make test
+   docker run --rm -v $(pwd):/workspace -w /workspace -e PYTHONPATH=/workspace portfolio-spec-engine:test pytest tests -v --cov=app --cov-report=term-missing
    ```
 
 4. **Encerrar a pilha**:

@@ -301,4 +301,34 @@ def test_observability_coverage(monkeypatch):
     OrchestratorObservability.record_usage_and_cost(None, {}, 0.0)
 
 
+def test_audit_hash_chain_integrity_and_tamper_detection():
+    """Valida encadeamento SHA-256 e detecção imediata de violação/adulteração."""
+    # 1. Cria 3 blocos de auditoria em cadeia
+    audit_log.save_audit_log("sess_1", "gemini-3.5-flash", 1, {"total_token_count": 100})
+    audit_log.save_audit_log("sess_2", "gemini-3.5-flash", 2, {"total_token_count": 200})
+    audit_log.save_audit_log("sess_3", "gemini-3.5-flash", 3, {"total_token_count": 300})
+
+    # 2. Verifica integridade inicial
+    is_valid, msg = audit_log.verify_audit_chain_integrity()
+    assert is_valid is True
+    assert "3 blocos de auditoria verificados" in msg
+
+    # 3. Simula adulteração de custo no bloco do meio
+    import json
+    with open(audit_log.INDEX_PATH, "r", encoding="utf-8") as f:
+        records = json.load(f)
+
+    # Forja o custo sem recomputar hash
+    records[1]["total_cost_usd"] = 9999.99
+
+    with open(audit_log.INDEX_PATH, "w", encoding="utf-8") as f:
+        json.dump(records, f)
+
+    # 4. Verificação deve falhar e apontar violação
+    is_valid_tampered, tamper_msg = audit_log.verify_audit_chain_integrity()
+    assert is_valid_tampered is False
+    assert "Adulteração detectada no bloco 1" in tamper_msg
+
+
+
 

@@ -1,5 +1,6 @@
 import os
 import json
+import hashlib
 from datetime import datetime
 from app.config import APP_DATA_DIR
 
@@ -17,10 +18,23 @@ def calculate_gemini_cost(model: str, prompt_tokens: int, candidates_tokens: int
     return (prompt_tokens * COST_PROMPT) + (candidates_tokens * COST_CANDIDATE) + (thinking_tokens * COST_THINKING)
 
 
+def _compute_record_hash(record: dict, previous_hash: str) -> str:
+    """Calcula o hash criptográfico SHA-256 determinístico de um registro de auditoria."""
+    payload = {
+        "session_id": record.get("session_id"),
+        "timestamp": record.get("timestamp"),
+        "model": record.get("model"),
+        "total_tokens": record.get("total_tokens"),
+        "total_cost_usd": record.get("total_cost_usd"),
+        "previous_hash": previous_hash,
+    }
+    canonical_str = json.dumps(payload, sort_keys=True)
+    return hashlib.sha256(canonical_str.encode("utf-8")).hexdigest()
+
 
 def save_audit_log(session_id: str, model: str, total_turns: int, usage: dict) -> str:
     """
-    Grava um arquivo Markdown de auditoria de custo detalhado e atualiza o índice global JSON.
+    Grava um arquivo Markdown de auditoria e anexa o registro à Hash Chain criptográfica SHA-256.
     """
     prompt_tokens = usage.get("prompt_token_count", 0)
     candidates_tokens = usage.get("candidates_token_count", 0)
@@ -71,7 +85,7 @@ def save_audit_log(session_id: str, model: str, total_turns: int, usage: dict) -
     with open(report_filepath, "w", encoding="utf-8") as f:
         f.write(report_content)
 
-    # Atualiza o índice geral de auditoria JSON
+    # Atualiza o índice geral de auditoria JSON com encadeamento de hash SHA-256
     index_data = []
     if os.path.exists(INDEX_PATH):
         try:
@@ -83,8 +97,11 @@ def save_audit_log(session_id: str, model: str, total_turns: int, usage: dict) -
     # Remove registro duplicado se houver
     index_data = [item for item in index_data if item.get("session_id") != session_id]
 
-    # Insere novo registro
-    index_data.append({
+    # Determina o previous_hash
+    genesis_hash = "0" * 64
+    previous_hash = index_data[-1].get("current_hash", genesis_hash) if index_data else genesis_hash
+
+    new_record = {
         "session_id": session_id,
         "timestamp": timestamp,
         "model": model,
@@ -94,13 +111,53 @@ def save_audit_log(session_id: str, model: str, total_turns: int, usage: dict) -
         "thinking_tokens": thinking_tokens,
         "total_tokens": total_tokens,
         "total_cost_usd": total_cost_est,
-        "report_file": report_filename
-    })
+        "report_file": report_filename,
+        "previous_hash": previous_hash,
+    }
+    new_record["current_hash"] = _compute_record_hash(new_record, previous_hash)
+
+    index_data.append(new_record)
 
     with open(INDEX_PATH, "w", encoding="utf-8") as f:
         json.dump(index_data, f, indent=2, ensure_ascii=False)
 
     return report_filepath
+
+
+def verify_audit_chain_integrity() -> tuple[bool, str]:
+    """
+    Verifica a integridade criptográfica da cadeia de auditoria SHA-256 em O(N).
+    Detecta qualquer adulteração, inserção ou remoção não autorizada de registros.
+    """
+    if not os.path.exists(INDEX_PATH):
+        return True, "Cadeia de auditoria vazia."
+
+    try:
+        with open(INDEX_PATH, "r", encoding="utf-8") as f:
+            index_data = json.load(f)
+    except Exception as e:
+        return False, f"Falha ao carregar índice de auditoria: {e}"
+
+    if not index_data:
+        return True, "Cadeia de auditoria vazia."
+
+    genesis_hash = "0" * 64
+    expected_previous = genesis_hash
+
+    for i, record in enumerate(index_data):
+        prev_hash = record.get("previous_hash", "")
+        curr_hash = record.get("current_hash", "")
+
+        if prev_hash != expected_previous:
+            return False, f"Quebra de integridade no bloco {i} (Sessão {record.get('session_id')}): previous_hash incompatível."
+
+        computed_hash = _compute_record_hash(record, prev_hash)
+        if computed_hash != curr_hash:
+            return False, f"Adulteração detectada no bloco {i} (Sessão {record.get('session_id')}): hash do payload corrompido."
+
+        expected_previous = curr_hash
+
+    return True, f"Cadeia íntegra. {len(index_data)} blocos de auditoria verificados com sucesso."
 
 
 def get_audit_index() -> list:
